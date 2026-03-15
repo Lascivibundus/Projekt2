@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Squares [SMOOTH]</title>
+  <title>Squares [PERFECT]</title>
   <style>
     body {
       margin: 0;
@@ -26,7 +26,7 @@
 </head>
 <body tabindex="0">
   <canvas id="canvas" width="800" height="600"></canvas>
-  <div id="info">Click → WASD = Instant smooth movement (predicted!)</div>
+  <div id="info">Click → WASD = SMOOTH movement!</div>
   
   <script src="/socket.io/socket.io.js"></script>
   <script>
@@ -34,13 +34,11 @@
     const ctx = canvas.getContext('2d');
     const socket = io();
     
-    // GAME STATE
     const players = new Map();
     let myPlayer = null;
     let keys = {};
-    let prediction = { x: 0, y: 0, active: false };
     
-    // INPUT
+    // INPUT - Global capture
     window.addEventListener('keydown', (e) => {
       keys[e.key.toLowerCase()] = true;
     });
@@ -55,23 +53,16 @@
     function update() {
       if (!myPlayer) return;
       
-      // 🧠 CLIENT PREDICTION
-      const speed = 5;
+      // Calculate movement
+      const speed = 4;
       let dx = 0, dy = 0;
       if (keys['d']) dx = speed;
       if (keys['a']) dx = -speed;
       if (keys['s']) dy = speed;
       if (keys['w']) dy = -speed;
       
+      // Send to server immediately
       if (dx || dy) {
-        // Predict instantly
-        prediction.active = true;
-        myPlayer.x += dx;
-        myPlayer.y += dy;
-        myPlayer.x = Math.max(25, Math.min(775, myPlayer.x));
-        myPlayer.y = Math.max(25, Math.min(575, myPlayer.y));
-        
-        // Send to server (slightly delayed)
         socket.emit('move', { x: dx, y: dy });
       }
     }
@@ -92,7 +83,6 @@
         ctx.fillRect(player.x-size/2, player.y-size/2, size, size);
         ctx.restore();
         
-        // Name
         ctx.fillStyle = isMe ? '#fff' : '#aaa';
         ctx.font = 'bold 12px monospace';
         ctx.textAlign = 'center';
@@ -106,7 +96,7 @@
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText(`Players: ${players.size}`, 10, 20);
-      if (myPlayer) ctx.fillText(`Ping: ${Math.round(socket.io.engine.ping)}ms`, 10, 35);
+      if (myPlayer) ctx.fillText(`You: ${myPlayer.id.slice(-4)}`, 10, 35);
     }
     
     function gameLoop() {
@@ -115,32 +105,25 @@
       requestAnimationFrame(gameLoop);
     }
     
-    // NETWORK EVENTS
+    // NETWORK - Accept ALL server updates
     socket.on('init', (me, allPlayers) => {
       myPlayer = me;
       allPlayers.forEach(p => players.set(p.id, p));
+      console.log('✅ YOU:', me.id.slice(-4));
     });
     
-    socket.on('newPlayer', p => players.set(p.id, p));
-    
-    socket.on('updatePlayer', (updatedPlayer) => {
-      const existing = players.get(updatedPlayer.id);
-      
-      // 🧠 CORRECTION: Snap back if server disagrees
-      if (existing && updatedPlayer.id === myPlayer?.id) {
-        // Smooth lerp to server position
-        const diffX = updatedPlayer.x - myPlayer.x;
-        const diffY = updatedPlayer.y - myPlayer.y;
-        if (Math.abs(diffX) > 10 || Math.abs(diffY) > 10) {
-          myPlayer.x += diffX * 0.3;
-          myPlayer.y += diffY * 0.3;
-        }
-      } else {
-        players.set(updatedPlayer.id, updatedPlayer);
-      }
+    socket.on('newPlayer', p => {
+      players.set(p.id, p);
     });
     
-    socket.on('removePlayer', id => players.delete(id));
+    socket.on('updatePlayer', (player) => {
+      // 🎯 KEY FIX: Always trust server for ALL players
+      players.set(player.id, player);
+    });
+    
+    socket.on('removePlayer', id => {
+      players.delete(id);
+    });
     
     gameLoop();
   </script>
