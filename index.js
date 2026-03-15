@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const path = require('path');  // ← ADD THIS
 
 const app = express();
 const server = http.createServer(app);
@@ -8,11 +9,13 @@ const io = socketIo(server, { cors: { origin: "*" } });
 
 const players = new Map();
 
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/game.html');
-});
+// 🎯 FIX 1: Serve static files properly
+app.use(express.static(path.join(__dirname)));
 
-app.use(express.static('.'));
+// 🎯 FIX 2: Serve game.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'game.html'));
+});
 
 io.on('connection', (socket) => {
   console.log('👤 CONNECT:', socket.id.slice(-4));
@@ -43,6 +46,7 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log('🚀 Server ready');
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log('🚀 Server ready on port:', PORT);
 });
