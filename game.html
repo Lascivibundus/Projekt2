@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Squares</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      overflow: hidden;
+      font-family: monospace;
+    }
+    canvas {
+      border: 3px solid #0f0;
+      background: #000;
+      display: block;
+      margin: 0 auto;
+      cursor: none;
+    }
+    #info {
+      color: #0f0;
+      text-align: center;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body tabindex="0">
+  <canvas id="canvas" width="800" height="600"></canvas>
+  <div id="info">Click here → WASD moves your green square!</div>
+  
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const socket = io();
+    const players = new Map();
+    
+    let keys = {};
+    let myPlayer = null;
+    
+    // FORCE FOCUS
+    window.focus();
+    document.body.focus();
+    canvas.focus();
+    
+    // CAPTURE ALL KEYS GLOBALLY
+    window.addEventListener('keydown', (e) => {
+      console.log('KEY:', e.key);
+      keys[e.key.toLowerCase()] = true;
+    });
+    
+    window.addEventListener('keyup', (e) => {
+      keys[e.key.toLowerCase()] = false;
+    });
+    
+    // CLICK TO FOCUS
+    canvas.addEventListener('click', () => {
+      canvas.focus();
+      document.body.focus();
+      window.focus();
+    });
+    
+    function update() {
+      if (!myPlayer) return;
+      
+      let dx = 0, dy = 0;
+      if (keys['d']) dx = 4;
+      if (keys['a']) dx = -4;
+      if (keys['s']) dy = 4;
+      if (keys['w']) dy = -4;
+      
+      if (dx || dy) {
+        console.log('MOVE:', dx, dy);
+        socket.emit('move', { x: dx, y: dy });
+      }
+    }
+    
+    function render() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, 800, 600);
+      
+      players.forEach(player => {
+        ctx.save();
+        ctx.shadowColor = player.color;
+        ctx.shadowBlur = player.id === myPlayer?.id ? 50 : 20;
+        
+        ctx.fillStyle = player.id === myPlayer?.id ? '#0f0' : player.color;
+        ctx.fillRect(player.x-20, player.y-20, 40, 40);
+        ctx.restore();
+        
+        ctx.fillStyle = 'white';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(player.id.slice(-4), player.x, player.y+35);
+      });
+    }
+    
+    function loop() {
+      update();
+      render();
+      requestAnimationFrame(loop);
+    }
+    
+    // EVENTS
+    socket.on('init', (me, allPlayers) => {
+      myPlayer = me;
+      console.log('✅ YOU ARE:', me.id.slice(-4));
+      allPlayers.forEach(p => players.set(p.id, p));
+    });
+    
+    socket.on('newPlayer', p => {
+      players.set(p.id, p);
+    });
+    
+    socket.on('updatePlayer', p => {
+      players.set(p.id, p);
+    });
+    
+    socket.on('removePlayer', id => {
+      players.delete(id);
+    });
+    
+    loop();
+    console.log('🎮 READY - Click canvas + WASD');
+  </script>
+</body>
+</html>
