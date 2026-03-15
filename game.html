@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Squares</title>
+  <title>Squares [SMOOTH]</title>
   <style>
     body {
       margin: 0;
@@ -26,51 +26,52 @@
 </head>
 <body tabindex="0">
   <canvas id="canvas" width="800" height="600"></canvas>
-  <div id="info">Click here → WASD moves your green square!</div>
+  <div id="info">Click → WASD = Instant smooth movement (predicted!)</div>
   
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const socket = io();
+    
+    // GAME STATE
     const players = new Map();
-    
-    let keys = {};
     let myPlayer = null;
+    let keys = {};
+    let prediction = { x: 0, y: 0, active: false };
     
-    // FORCE FOCUS
-    window.focus();
-    document.body.focus();
-    canvas.focus();
-    
-    // CAPTURE ALL KEYS GLOBALLY
+    // INPUT
     window.addEventListener('keydown', (e) => {
-      console.log('KEY:', e.key);
       keys[e.key.toLowerCase()] = true;
     });
-    
     window.addEventListener('keyup', (e) => {
       keys[e.key.toLowerCase()] = false;
     });
-    
-    // CLICK TO FOCUS
     canvas.addEventListener('click', () => {
       canvas.focus();
-      document.body.focus();
       window.focus();
     });
     
     function update() {
       if (!myPlayer) return;
       
+      // 🧠 CLIENT PREDICTION
+      const speed = 5;
       let dx = 0, dy = 0;
-      if (keys['d']) dx = 4;
-      if (keys['a']) dx = -4;
-      if (keys['s']) dy = 4;
-      if (keys['w']) dy = -4;
+      if (keys['d']) dx = speed;
+      if (keys['a']) dx = -speed;
+      if (keys['s']) dy = speed;
+      if (keys['w']) dy = -speed;
       
       if (dx || dy) {
-        console.log('MOVE:', dx, dy);
+        // Predict instantly
+        prediction.active = true;
+        myPlayer.x += dx;
+        myPlayer.y += dy;
+        myPlayer.x = Math.max(25, Math.min(775, myPlayer.x));
+        myPlayer.y = Math.max(25, Math.min(575, myPlayer.y));
+        
+        // Send to server (slightly delayed)
         socket.emit('move', { x: dx, y: dy });
       }
     }
@@ -80,48 +81,68 @@
       ctx.fillRect(0, 0, 800, 600);
       
       players.forEach(player => {
-        ctx.save();
-        ctx.shadowColor = player.color;
-        ctx.shadowBlur = player.id === myPlayer?.id ? 50 : 20;
+        const isMe = player.id === myPlayer?.id;
+        const size = isMe ? 35 : 28;
+        const glow = isMe ? 60 : 25;
         
-        ctx.fillStyle = player.id === myPlayer?.id ? '#0f0' : player.color;
-        ctx.fillRect(player.x-20, player.y-20, 40, 40);
+        ctx.save();
+        ctx.shadowColor = player.color || '#0f0';
+        ctx.shadowBlur = glow;
+        ctx.fillStyle = isMe ? '#0f0' : (player.color || '#666');
+        ctx.fillRect(player.x-size/2, player.y-size/2, size, size);
         ctx.restore();
         
-        ctx.fillStyle = 'white';
-        ctx.font = '12px monospace';
+        // Name
+        ctx.fillStyle = isMe ? '#fff' : '#aaa';
+        ctx.font = 'bold 12px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(player.id.slice(-4), player.x, player.y+35);
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(player.id.slice(-4), player.x, player.y-size/2-5);
       });
+      
+      // Stats
+      ctx.fillStyle = '#0f0';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`Players: ${players.size}`, 10, 20);
+      if (myPlayer) ctx.fillText(`Ping: ${Math.round(socket.io.engine.ping)}ms`, 10, 35);
     }
     
-    function loop() {
+    function gameLoop() {
       update();
       render();
-      requestAnimationFrame(loop);
+      requestAnimationFrame(gameLoop);
     }
     
-    // EVENTS
+    // NETWORK EVENTS
     socket.on('init', (me, allPlayers) => {
       myPlayer = me;
-      console.log('✅ YOU ARE:', me.id.slice(-4));
       allPlayers.forEach(p => players.set(p.id, p));
     });
     
-    socket.on('newPlayer', p => {
-      players.set(p.id, p);
+    socket.on('newPlayer', p => players.set(p.id, p));
+    
+    socket.on('updatePlayer', (updatedPlayer) => {
+      const existing = players.get(updatedPlayer.id);
+      
+      // 🧠 CORRECTION: Snap back if server disagrees
+      if (existing && updatedPlayer.id === myPlayer?.id) {
+        // Smooth lerp to server position
+        const diffX = updatedPlayer.x - myPlayer.x;
+        const diffY = updatedPlayer.y - myPlayer.y;
+        if (Math.abs(diffX) > 10 || Math.abs(diffY) > 10) {
+          myPlayer.x += diffX * 0.3;
+          myPlayer.y += diffY * 0.3;
+        }
+      } else {
+        players.set(updatedPlayer.id, updatedPlayer);
+      }
     });
     
-    socket.on('updatePlayer', p => {
-      players.set(p.id, p);
-    });
+    socket.on('removePlayer', id => players.delete(id));
     
-    socket.on('removePlayer', id => {
-      players.delete(id);
-    });
-    
-    loop();
-    console.log('🎮 READY - Click canvas + WASD');
+    gameLoop();
   </script>
 </body>
 </html>
